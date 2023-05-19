@@ -158,9 +158,7 @@ def prep_zillow(df):
     df = df[(df['unitcnt'].isna()) | (df['unitcnt'] == 1)]
     df = df[df.propertylandusetypeid.isin([31,260,261,263,264,265,266,267,275])]
     # drop some columns and handle some major nulls
-    df = data_prep(df,['id','id.1','regionidcity','regionidcounty','finishedsquarefeet12','lotsizesquarefeet','censustractandblock','regionidneighborhood','propertyzoningdesc','assessmentyear','propertycountylandusecode','buildingqualitytypeid','calculatedbathnbr','unitcnt','garagetotalsqft'],.3,.75)
-    # Replace missing values with 0 in column: 'fullbathcnt'
-    df = df.fillna({'fullbathcnt': round(df.bathroomcnt,0)-1})
+    df = data_prep(df,['parcelid','id','id.1','fullbathcnt','regionidcity','regionidcounty','finishedsquarefeet12','lotsizesquarefeet','censustractandblock','regionidneighborhood','propertyzoningdesc','assessmentyear','propertycountylandusecode','buildingqualitytypeid','calculatedbathnbr','unitcnt','garagetotalsqft'],.3,.75)
     # Replace missing values with 0 in column: 'garagecarcnt'
     df = df.fillna({'garagecarcnt': 0})
     # Replace missing values with 5 in column: 'airconditioningtypeid'
@@ -175,7 +173,10 @@ def prep_zillow(df):
     df = df.fillna({'structuretaxvaluedollarcnt': df['taxvaluedollarcnt']-df['landtaxvaluedollarcnt']})
     # Drop rows with missing data across all columns
     df = df.dropna()
-    df = df[['parcelid','yearbuilt','bathroomcnt','fullbathcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','fips','regionidzip','rawcensustractandblock','propertylandusetypeid','propertylandusedesc','airconditioningtypeid','airconditioningdesc','heatingorsystemtypeid','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
+    df.fips = df.fips.map({6037:'LA',6059:'Orange',6111:'Ventura'})
+    df = df.rename(columns=({'fips':'county'}))
+    df = df.astype({'regionidzip': 'int64'})
+    df = df[['yearbuilt','bathroomcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','county','regionidzip','rawcensustractandblock','propertylandusetypeid','propertylandusedesc','airconditioningtypeid','airconditioningdesc','heatingorsystemtypeid','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
     return df
 
 def wrangle_zillow_mvp():
