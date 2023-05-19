@@ -57,71 +57,125 @@ def get_zillow(user=user,password=password,host=host):
     df = df[df['latitude'].notna()]
     return df
 
-def prep4ex_zillow(df):
-    '''send uncleaned zillow df to prep for exploration'''
-    # replace missing values with "0" or appropriate value where it makes sense
-    df = df.fillna({'numberofstories':0
-                    ,'fireplaceflag':0
-                    ,'yardbuildingsqft26':0
-                    ,'yardbuildingsqft17':0
-                    ,'unitcnt':0
-                    ,'threequarterbathnbr':0
-                    ,'pooltypeid7':0
-                    ,'pooltypeid2':0
-                    ,'pooltypeid10':0
-                    ,'poolsizesum':0
-                    ,'poolcnt':0
-                    ,'hashottuborspa':0
-                    ,'garagetotalsqft':0
-                    ,'garagecarcnt':0
-                    ,'fireplacecnt':0
-                    ,'lotsizesquarefeet': df['calculatedfinishedsquarefeet']})
-    # split transaction date to year, month, and day
-    df_split = df['transactiondate'].str.split(pat='-', expand=True).add_prefix('trx_')
-    df = pd.concat([df.iloc[:, :40], df_split, df.iloc[:, 40:]], axis=1)
-    # rename columns
-    df = df.rename(columns=({'yearbuilt':'year'
-                            ,'bedroomcnt':'beds'
-                            ,'bathroomcnt':'baths'
-                            ,'calculatedfinishedsquarefeet':'area'
-                            ,'taxvaluedollarcnt':'prop_value'
-                            ,'fips':'county'
-                            ,'trx_1':'trx_month'
-                            ,'trx_2':'trx_day'
-                            ,'numberofstories':'stories'
-                            ,'poolcnt':'pools'}))
-    # filter out/drop columns that have too many nulls, are related to target, are dupes, or have no use for exploration or modeling
-    df = df.drop(columns=['id', 'airconditioningtypeid', 'architecturalstyletypeid', 'basementsqft','buildingclasstypeid',
-                                'buildingqualitytypeid', 'calculatedbathnbr', 'decktypeid','finishedfloor1squarefeet',
-                                'finishedsquarefeet12', 'finishedsquarefeet13', 'finishedsquarefeet15', 'finishedsquarefeet50', 
-                                'finishedsquarefeet6', 'fullbathcnt', 'heatingorsystemtypeid','lotsizesquarefeet',
-                                'pooltypeid10', 'pooltypeid2', 'pooltypeid7', 'propertycountylandusecode', 'propertylandusetypeid',
-                                'propertyzoningdesc', 'rawcensustractandblock', 'regionidcity', 'regionidcounty', 'regionidneighborhood', 
-                                'regionidzip', 'storytypeid', 'threequarterbathnbr', 'typeconstructiontypeid', 'yardbuildingsqft17', 'yardbuildingsqft26',
-                                'structuretaxvaluedollarcnt',
-                                'assessmentyear', 'landtaxvaluedollarcnt',
-                                'taxamount', 'taxdelinquencyflag', 'taxdelinquencyyear',
-                                'censustractandblock', 'id.1', 'logerror'])
-    # drop nulls
+def get_object_cols(df):
+    '''
+    This function takes in a dataframe and identifies the columns that are object types
+    and returns a list of those column names. 
+    '''
+    return df.select_dtypes(include=['object', 'category']).columns.tolist()
+
+def get_numeric_cols(df):
+    '''
+    This function takes in a dataframe and identifies the columns that are object types
+    and returns a list of those column names. 
+    '''
+    return df.select_dtypes(exclude=['object', 'category']).columns.tolist()
+
+def nulls_by_col(df):
+    """
+    This function will:
+        - take in a dataframe
+        - assign a variable to a Series of total row nulls for ea/column
+        - assign a variable to find the percent of rows w/nulls
+        - output a df of the two variables.
+    """
+    num_missing = df.isnull().sum()
+    # pct_miss = df.isnull().sum().mean()
+    pct_miss = (num_missing / df.shape[0]) * 100
+    return pd.DataFrame(
+        {'num_rows_missing': num_missing, 'percent_rows_missing': pct_miss}
+    )
+
+def nulls_by_row(df, index_id = 'customer_id'):
+    '''
+    This is a function called `nulls_by_row` that takes a pandas DataFrame `df` and 
+    an optional argument `index_id` (default value is 'customer_id'). The function 
+    calculates the number of missing values in each row of the DataFrame and the percentage 
+    of missing values in each row. It then creates a new DataFrame `rows_missing` with 
+    columns 'num_cols_missing' and 'percent_cols_missing' and merges it with the original 
+    DataFrame `df` using the index. The function returns the merged DataFrame sorted by the 
+    number of missing values in each row in descending order.
+    '''
+    num_missing = df.isnull().sum(axis=1)
+    pct_miss = (num_missing / df.shape[1]) * 100
+    rows_missing = pd.DataFrame({'num_cols_missing': num_missing, 'percent_cols_missing': pct_miss})
+    rows_missing = df.merge(rows_missing,
+                        left_index=True,
+                        right_index=True).reset_index()[[index_id, 'num_cols_missing', 'percent_cols_missing']]
+    return rows_missing.sort_values(by='num_cols_missing', ascending=False)
+
+def remove_columns(df, cols_to_remove):
+    """
+    This function will:
+    - take in a df and list of columns
+    - drop the listed columns
+    - return the new df
+    """
+    df = df.drop(columns=cols_to_remove)
+    return df
+
+def handle_missing_values(df, prop_required_columns=0.5, prop_required_rows=0.75):
+    """
+    This function will:
+    - take in: 
+        - a dataframe
+        - column threshold (defaulted to 0.5)
+        - row threshold (defaulted to 0.75)
+    - calculates the minimum number of non-missing values required for each column/row to be retained
+    - drops columns/rows with a high proportion of missing values.
+    - returns the new df
+    """
+    
+    column_threshold = int(round(prop_required_columns * len(df.index), 0))
+    df = df.dropna(axis=1, thresh=column_threshold)
+    
+    row_threshold = int(round(prop_required_rows * len(df.columns), 0))
+    df = df.dropna(axis=0, thresh=row_threshold)
+    
+    return df
+
+def data_prep(df, col_to_remove=None, prop_required_columns=0.5, prop_required_rows=0.75):
+    """
+    This function will:
+    - take in: 
+        - a dataframe
+        - list of columns
+        - column threshold (defaulted to 0.5)
+        - row threshold (defaulted to 0.75)
+    - removes unwanted columns
+    - remove rows and columns that contain a high proportion of missing values
+    - returns cleaned df
+    """
+    if col_to_remove is None:
+        col_to_remove = []
+    df = remove_columns(df, col_to_remove)
+    df = handle_missing_values(df, prop_required_columns, prop_required_rows)
+    return df
+
+def prep_zillow(df):
+    '''send uncleaned zillow df to prep and clean'''
+    # Filter rows based on column: 'unitcnt' and assumed single unit
+    df = df[(df['unitcnt'].isna()) | (df['unitcnt'] == 1)]
+    df = df[df.propertylandusetypeid.isin([31,260,261,263,264,265,266,267,275])]
+    # drop some columns and handle some major nulls
+    df = data_prep(df,['id','id.1','regionidcity','regionidcounty','finishedsquarefeet12','lotsizesquarefeet','censustractandblock','regionidneighborhood','propertyzoningdesc','assessmentyear','propertycountylandusecode','buildingqualitytypeid','calculatedbathnbr','unitcnt','garagetotalsqft'],.3,.75)
+    # Replace missing values with 0 in column: 'fullbathcnt'
+    df = df.fillna({'fullbathcnt': round(df.bathroomcnt,0)-1})
+    # Replace missing values with 0 in column: 'garagecarcnt'
+    df = df.fillna({'garagecarcnt': 0})
+    # Replace missing values with 5 in column: 'airconditioningtypeid'
+    df = df.fillna({'airconditioningtypeid': 5})
+    # Replace missing values with "None" in column: 'airconditioningdesc'
+    df = df.fillna({'airconditioningdesc': "None"})
+    # Replace missing values with 24 in column: 'heatingorsystemtypeid'
+    df = df.fillna({'heatingorsystemtypeid': 24})
+    # Replace missing values with "Yes" in column: 'heatingorsystemdesc'
+    df = df.fillna({'heatingorsystemdesc': "Yes"})
+    # Replace missing values with taxvalue-landtax in column: 'structuretaxvaluedollarcnt'
+    df = df.fillna({'structuretaxvaluedollarcnt': df['taxvaluedollarcnt']-df['landtaxvaluedollarcnt']})
+    # Drop rows with missing data across all columns
     df = df.dropna()
-    # map county to fips
-    df.county = df.county.map({6037:'LA',6059:'Orange',6111:'Ventura'})
-    # make int
-    ints = ['year','beds','area','prop_value','trx_month','trx_day']
-    for i in ints:
-        df[i] = df[i].astype(int)
-    # sort by column: 'transactiondate' (descending) for dropping dupes keeping recent
-    df = df.sort_values(['transactiondate'], ascending=[False])
-    # drop duplicate rows in column: 'parcelid', keeping max trx date
-    df = df.drop_duplicates(subset=['parcelid'])
-    # add features
-    df = df.assign(age=2017-df.year)
-    # then sort columns and index for my own eyes
-    df=df[['age', 'baths', 'beds', 'roomcnt',
-            'area', 'county', 'latitude', 'longitude',
-            'prop_value']].sort_index()
-    # drop outlier rows based on column: 'prop_value' and 'area'
-    df = df[(df['prop_value'] < df['prop_value'].quantile(.98)) & (df['area'] < 6000)]
+    df = df[['parcelid','yearbuilt','bathroomcnt','fullbathcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','fips','regionidzip','rawcensustractandblock','propertylandusetypeid','propertylandusedesc','airconditioningtypeid','airconditioningdesc','heatingorsystemtypeid','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
     return df
 
 def wrangle_zillow_mvp():
@@ -140,7 +194,7 @@ def wrangle_zillow_mvp():
     mapping county codes to county names, converting certain columns
     """
     df = get_zillow()
-    df = prep4ex_zillow(df)
+    df = prep_zillow(df)
     return df[['beds','baths','area','prop_value']].assign(rooms=(df.beds+df.baths))
 
 def wrangle_zillow():
@@ -159,7 +213,7 @@ def wrangle_zillow():
     mapping county codes to county names, converting certain columns
     """
     df = get_zillow()
-    df = prep4ex_zillow(df)
+    df = prep_zillow(df)
     return df
 
 ### SPLIT DATA ###
