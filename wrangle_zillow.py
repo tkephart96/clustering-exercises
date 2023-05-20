@@ -173,30 +173,22 @@ def prep_zillow(df):
     df = df.fillna({'structuretaxvaluedollarcnt': df['taxvaluedollarcnt']-df['landtaxvaluedollarcnt']})
     # Drop rows with missing data across all columns
     df = df.dropna()
+    # map county names
     df.fips = df.fips.map({6037:'LA',6059:'Orange',6111:'Ventura'})
     df = df.rename(columns=({'fips':'county'}))
-    df = df.astype({'regionidzip': 'int64'})
-    df = df[['yearbuilt','bathroomcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','county','regionidzip','rawcensustractandblock','propertylandusetypeid','propertylandusedesc','airconditioningtypeid','airconditioningdesc','heatingorsystemtypeid','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
+    # Derive column 'rawcensustractandblock_full' from column: 'rawcensustractandblock' make string and full length
+    df.insert(11, 'rtb_full', df.apply(lambda row : str(row['rawcensustractandblock']) + ((18 - len(str(row['rawcensustractandblock']))) * '0'), axis=1))
+    # df.insert(12, 'rawcensustractandblock_county', df.apply(lambda row : row['rawcensustractandblock_full'][:4], axis=1)) # this is fips as well
+    df.insert(12, 'rtb_tract', df.apply(lambda row : row['rtb_full'][4:11], axis=1))
+    df.insert(13, 'rtb_block', df.apply(lambda row : row['rtb_full'][11:15], axis=1))
+    df.insert(15, 'rtb_extra', df.apply(lambda row : row['rtb_full'][15:], axis=1))
+    # re-type columns
+    df = df.astype({'regionidzip': 'int64',
+                    'rtb_tract': 'float64',
+                    'rtb_block': 'int64',
+                    'rtb_extra': 'int64'})
+    df = df[['yearbuilt','bathroomcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','county','regionidzip','rtb_tract','rtb_block','rtb_extra','propertylandusedesc','airconditioningdesc','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
     return df
-
-def wrangle_zillow_mvp():
-    """
-    This function wrangles data from a SQL database of Zillow properties, caches it locally, drops null
-    values, renames columns, maps county to fips, converts certain columns to integers, and handles
-    outliers.
-    
-    :param user: The username for accessing the MySQL database
-    :param password: The password is unique per user saved in env
-    :param host: The host parameter is the address of the server where the Zillow database is hosted
-    :return: The function `wrangle_zillow` is returning a cleaned and wrangled pandas DataFrame
-    containing information on single family residential properties in Los Angeles, Orange, and Ventura
-    counties, including the year built, number of bedrooms and bathrooms, square footage, property value,
-    property tax, and county. The DataFrame has been cleaned by dropping null values, renaming columns,
-    mapping county codes to county names, converting certain columns
-    """
-    df = get_zillow()
-    df = prep_zillow(df)
-    return df[['beds','baths','area','prop_value']].assign(rooms=(df.beds+df.baths))
 
 def wrangle_zillow():
     """
@@ -215,6 +207,80 @@ def wrangle_zillow():
     """
     df = get_zillow()
     df = prep_zillow(df)
+    return df
+
+### OUTLIERS ###
+
+def get_upper_outliers(s, k):
+    '''
+    Given a series and a cutoff value, k, returns the upper outliers for the
+    series.
+
+    The values returned will be either False (if the point is not an outlier), or 
+    True if greater than the upper bound of the observation.
+    '''
+    q1, q3 = s.quantile([.25, .75])
+    iqr = q3 - q1
+    upper_bound = q3 + k * iqr
+    return s.apply(lambda x:(x > upper_bound))
+
+def get_lower_outliers(s, k):
+    '''
+    Given a series and a cutoff value, k, returns the lower outliers for the
+    series.
+
+    The values returned will be either False (if the point is not an outlier), or 
+    True if smaller than the lower bound of the observation.
+    '''
+    q1, q3 = s.quantile([.25, .75])
+    iqr = q3 - q1
+    lower_bound = q1 - k * iqr
+    return s.apply(lambda x: (x < lower_bound))
+
+def add_outlier_columns(df, k):
+    '''
+    Add a column with the suffix _outliers for all the numeric columns
+    in the given dataframe.
+    '''
+    for col in df.select_dtypes('number'):
+        # df[f'{col}_up_outliers'] = get_upper_outliers(df[col], k)
+        # df[f'{col}_lo_outliers'] = get_lower_outliers(df[col], k)
+        df[f'{col}_outliers'] = get_lower_outliers(df[col], k) + get_upper_outliers(df[col], k)
+    return df
+
+def clean_outliers(df):
+    '''
+    Take care of outliers using IQR
+    '''
+    df = add_outlier_columns(df, k=1.5)
+    # Drop column: 'latitude_outliers'
+    df = df.drop(columns=['latitude_outliers','longitude_outliers','regionidzip_outliers','rtb_tract_outliers','rtb_block_outliers','rtb_extra_outliers'])
+    # Filter rows based on column: 'roomcnt_outliers'
+    df = df[df['roomcnt_outliers'] == False]
+    # Filter rows based on column: 'logerror_outliers'
+    df = df[df['logerror_outliers'] == False]
+    # Filter rows based on column: 'structuretaxvaluedollarcnt_outliers'
+    df = df[df['structuretaxvaluedollarcnt_outliers'] == False]
+    # Filter rows based on column: 'landtaxvaluedollarcnt_outliers'
+    df = df[df['landtaxvaluedollarcnt_outliers'] == False]
+    # Filter rows based on column: 'calculatedfinishedsquarefeet_outliers'
+    df = df[df['calculatedfinishedsquarefeet_outliers'] == False]
+    # Filter rows based on column: 'taxamount_outliers'
+    df = df[df['taxamount_outliers'] == False]
+    # Filter rows based on column: 'bathroomcnt_outliers'
+    df = df[df['bathroomcnt_outliers'] == False]
+    # Filter rows based on column: 'yearbuilt_outliers'
+    df = df[df['yearbuilt_outliers'] == False]
+    # Filter rows based on column: 'taxvaluedollarcnt_outliers'
+    df = df[df['taxvaluedollarcnt_outliers'] == False]
+    # Filter rows based on column: 'bedroomcnt_outliers'
+    df = df[df['bedroomcnt_outliers'] == False]
+    # Filter rows based on column: 'garagecarcnt_outliers'
+    df = df[df['garagecarcnt_outliers'] == False]
+    # Drop columns
+    outlier_cols = [col for col in df if col.endswith('_outliers')]
+    for col in outlier_cols:
+        df = df.drop(columns=col)
     return df
 
 ### SPLIT DATA ###
@@ -313,11 +379,13 @@ def robs_zillow(train,validate,test,scale=None):
 
 ### ENCODE ###
 
-def encode_county(df):
+def encode(df):
     '''
-    Encode county column from zillow dataset
+    Encode category columns from zillow dataset
     '''
     df['Orange'] = df.county.map({'Orange':1,'Ventura':0,'LA':0})
     df['LA'] = df.county.map({'Orange':0,'Ventura':0,'LA':1})
     df['Ventura'] = df.county.map({'Orange':0,'Ventura':1,'LA':0})
+    dummy = pd.get_dummies(df)
+    df = pd.concat([df,dummy],axis=1)
     return df
