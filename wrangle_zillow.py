@@ -171,24 +171,63 @@ def prep_zillow(df):
     df = df.fillna({'heatingorsystemdesc': "Yes"})
     # Replace missing values with taxvalue-landtax in column: 'structuretaxvaluedollarcnt'
     df = df.fillna({'structuretaxvaluedollarcnt': df['taxvaluedollarcnt']-df['landtaxvaluedollarcnt']})
-    # Drop rows with missing data across all columns
-    df = df.dropna()
     # map county names
     df.fips = df.fips.map({6037:'LA',6059:'Orange',6111:'Ventura'})
     df = df.rename(columns=({'fips':'county'}))
     # Derive column 'rawcensustractandblock_full' from column: 'rawcensustractandblock' make string and full length
     df.insert(11, 'rtb_full', df.apply(lambda row : str(row['rawcensustractandblock']) + ((18 - len(str(row['rawcensustractandblock']))) * '0'), axis=1))
     # df.insert(12, 'rawcensustractandblock_county', df.apply(lambda row : row['rawcensustractandblock_full'][:4], axis=1)) # this is fips as well
-    df.insert(12, 'rtb_tract', df.apply(lambda row : row['rtb_full'][4:11], axis=1))
-    df.insert(13, 'rtb_block', df.apply(lambda row : row['rtb_full'][11:15], axis=1))
-    df.insert(15, 'rtb_extra', df.apply(lambda row : row['rtb_full'][15:], axis=1))
+    df.insert(13, 'rtb_tract', df.apply(lambda row : row['rtb_full'][4:11], axis=1)) # useful for loc
+    # df.insert(14, 'rtb_block', df.apply(lambda row : row['rtb_full'][11:15], axis=1)) # no good for loc
+    # df.insert(15, 'rtb_extra', df.apply(lambda row : row['rtb_full'][15:], axis=1)) # no good for loc
+    # remove incorrect zip codes
+    df = df[df['regionidzip'] < 100000]
+    # Drop rows with missing data across all columns
+    df = df.dropna()
+    # Replace all instances of less than bed n bath with bed n bath in column: 'roomcnt'
+    df.loc[df['roomcnt'] < (df['bathroomcnt'] + df['bedroomcnt']), 'roomcnt'] = (df['bedroomcnt'] + round(df['bathroomcnt'],0))
+    # now drop real 0 roomcnt
+    df = df[df['roomcnt'] > 0]
+    # create features
+    df.insert(20, 'trx_date', df.apply(lambda row : row['transactiondate'][5:], axis=1))
+    df.insert(21, 'trx_month', df.apply(lambda row : row['trx_date'][:2], axis=1))
+    df = df.assign(age=(2017-df['yearbuilt']))
+    df = df.assign(old_home=(df['age']>29))
+    df = df.assign(has_garage=(df['garagecarcnt']>0))
     # re-type columns
     df = df.astype({'regionidzip': 'int64',
                     'rtb_tract': 'float64',
-                    'rtb_block': 'int64',
-                    'rtb_extra': 'int64'})
-    df = df[['yearbuilt','bathroomcnt','bedroomcnt','roomcnt','garagecarcnt','calculatedfinishedsquarefeet','latitude','longitude','county','regionidzip','rtb_tract','rtb_block','rtb_extra','propertylandusedesc','airconditioningdesc','heatingorsystemdesc','taxvaluedollarcnt','structuretaxvaluedollarcnt','landtaxvaluedollarcnt','taxamount','logerror','transactiondate']]
-    return df
+                    'trx_month': 'int64'})
+    # return in order that is easier to see
+    return df[
+        [
+            'yearbuilt',
+            'age',
+            'old_home',
+            'bathroomcnt',
+            'bedroomcnt',
+            'roomcnt',
+            'garagecarcnt',
+            'has_garage',
+            'calculatedfinishedsquarefeet',
+            'latitude',
+            'longitude',
+            'county',
+            'regionidzip',
+            'rtb_tract',
+            'propertylandusedesc',
+            'airconditioningdesc',
+            'heatingorsystemdesc',
+            'taxvaluedollarcnt',
+            'structuretaxvaluedollarcnt',
+            'landtaxvaluedollarcnt',
+            'taxamount',
+            'logerror',
+            'trx_month',
+            'trx_date',
+            'transactiondate'
+        ]
+    ]
 
 def wrangle_zillow():
     """
@@ -248,7 +287,7 @@ def add_outlier_columns(df, k):
         df[f'{col}_outliers'] = get_lower_outliers(df[col], k) + get_upper_outliers(df[col], k)
     return df
 
-def clean_outliers(df):
+def clean_outliers_iqr(df):
     '''
     Take care of outliers using IQR
     '''
@@ -281,6 +320,19 @@ def clean_outliers(df):
     outlier_cols = [col for col in df if col.endswith('_outliers')]
     for col in outlier_cols:
         df = df.drop(columns=col)
+    return df
+
+def clean_outliers_qtl(df):
+    '''
+    filter outliers based on quantile until kurtosis between +-(7) and skew between +-(2)
+    used data wrangler to help with this
+    '''
+    # Filter rows based on column: 'logerror'
+    df = df[(df['logerror'] < df['logerror'].quantile(.99)) & (df['logerror'] > df['logerror'].quantile(.005))]
+    # Filter rows based on column: 'taxvaluedollarcnt'
+    df = df[df['taxvaluedollarcnt'] < df['taxvaluedollarcnt'].quantile(.98)]
+    # Filter rows based on column: 'structuretaxvaluedollarcnt'
+    df = df[df['structuretaxvaluedollarcnt'] < df['structuretaxvaluedollarcnt'].quantile(.9965)]
     return df
 
 ### SPLIT DATA ###
