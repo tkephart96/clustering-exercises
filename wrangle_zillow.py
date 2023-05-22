@@ -1,8 +1,36 @@
 '''
 Wrangle Zillow Data
 
-Functions:
+Acquire/Prep:
+- get_zillow
+- get_object_cols
+- get_numeric_cols
+- nulls_by_col
+- nulls_by_row
 - wrangle_zillow
+    - get_zillow
+    - prep_zillow
+        - data_prep
+            - remove_columns
+            - handle_missing_values
+
+Outliers:
+- clean_outliers_iqr
+    - add_outlier_columns
+        - get_upper_outliers
+        - get_lower_outliers
+- clean_outliers_qtl
+
+Split:
+- split_data
+
+Scalers:
+- mm
+- std
+- robs
+
+Encode:
+- encode
 '''
 
 ### IMPORTS ###
@@ -345,7 +373,7 @@ def split_data(df):
 
 ### SCALERS ###
 
-def mm_zillow(train,validate,test,scale=None):
+def mm(train,validate,test,scale=None):
     """
     The function applies the Min Max Scaler method to scale the numerical features of the train, validate,
     and test datasets.
@@ -373,7 +401,7 @@ def mm_zillow(train,validate,test,scale=None):
         Xt = Xt.rename(columns={col: f'{col}_s'})
     return Xtr, Xv, Xt
 
-def std_zillow(train,validate,test,scale=None):
+def std(train,validate,test,scale=None):
     """
     The function applies the Standard Scaler method to scale the numerical features of the train, validate,
     and test datasets.
@@ -401,7 +429,7 @@ def std_zillow(train,validate,test,scale=None):
         Xt = Xt.rename(columns={col: f'{col}_s'})
     return Xtr, Xv, Xt
 
-def robs_zillow(train,validate,test,scale=None):
+def robs(train,validate,test,scale=None):
     """
     The function applies the RobustScaler method to scale the numerical features of the train, validate,
     and test datasets.
@@ -431,13 +459,10 @@ def robs_zillow(train,validate,test,scale=None):
 
 ### ENCODE ###
 
-def encode(df):
+def encode(df,drop_first=False):
     '''
     Encode category columns from zillow dataset
     '''
-    df['Orange'] = df.county.map({'Orange':1,'Ventura':0,'LA':0})
-    df['LA'] = df.county.map({'Orange':0,'Ventura':0,'LA':1})
-    df['Ventura'] = df.county.map({'Orange':0,'Ventura':1,'LA':0})
-    dummy = pd.get_dummies(df)
+    dummy = pd.get_dummies(df.select_dtypes('object'),drop_first=drop_first)
     df = pd.concat([df,dummy],axis=1)
     return df
