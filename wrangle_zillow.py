@@ -391,15 +391,21 @@ def mm(train,validate,test,scale=None):
     if scale is None:
         scale = train.columns.to_list()
     mm_scale = MinMaxScaler()
-    Xtr,Xv,Xt = train[scale],validate[scale],test[scale]
-    Xtr = pd.DataFrame(mm_scale.fit_transform(train[scale]),train.index,scale)
-    Xv = pd.DataFrame(mm_scale.transform(validate[scale]),validate.index,scale)
-    Xt = pd.DataFrame(mm_scale.transform(test[scale]),test.index,scale)
+    tr = train.copy()
+    tr[scale] = pd.DataFrame(mm_scale.fit_transform(tr[scale]),tr.index,tr[scale].columns)
     for col in scale:
-        Xtr = Xtr.rename(columns={col: f'{col}_s'})
-        Xv = Xv.rename(columns={col: f'{col}_s'})
-        Xt = Xt.rename(columns={col: f'{col}_s'})
-    return Xtr, Xv, Xt
+        tr = tr.rename(columns={col: f'{col}_s'})
+    if validate is not None:
+        v = validate.copy()
+        v[scale] = pd.DataFrame(mm_scale.transform(v[scale]),v.index,v[scale].columns)
+        for col in scale:
+            v = v.rename(columns={col: f'{col}_s'})
+    if test is not None:
+        t = test.copy()
+        t[scale] = pd.DataFrame(mm_scale.transform(t[scale]),t.index,t[scale].columns)
+        for col in scale:
+            t = t.rename(columns={col: f'{col}_s'})
+    return tr, v, t
 
 def std(train,validate,test,scale=None):
     """
@@ -419,17 +425,23 @@ def std(train,validate,test,scale=None):
     if scale is None:
         scale = train.columns.to_list()
     std_scale = StandardScaler()
-    Xtr,Xv,Xt = train[scale],validate[scale],test[scale]
-    Xtr = pd.DataFrame(std_scale.fit_transform(train[scale]),train.index,scale)
-    Xv = pd.DataFrame(std_scale.transform(validate[scale]),validate.index,scale)
-    Xt = pd.DataFrame(std_scale.transform(test[scale]),test.index,scale)
+    tr = train.copy()
+    tr[scale] = pd.DataFrame(std_scale.fit_transform(tr[scale]),tr.index,tr[scale].columns)
     for col in scale:
-        Xtr = Xtr.rename(columns={col: f'{col}_s'})
-        Xv = Xv.rename(columns={col: f'{col}_s'})
-        Xt = Xt.rename(columns={col: f'{col}_s'})
-    return Xtr, Xv, Xt
+        tr = tr.rename(columns={col: f'{col}_s'})
+    if validate is not None:
+        v = validate.copy()
+        v[scale] = pd.DataFrame(std_scale.transform(v[scale]),v.index,v[scale].columns)
+        for col in scale:
+            v = v.rename(columns={col: f'{col}_s'})
+    if test is not None:
+        t = test.copy()
+        t[scale] = pd.DataFrame(std_scale.transform(t[scale]),t.index,t[scale].columns)
+        for col in scale:
+            t = t.rename(columns={col: f'{col}_s'})
+    return tr, v, t
 
-def robs(train,validate,test,scale=None):
+def robs(train,validate=None,test=None,scale=None):
     """
     The function applies the RobustScaler method to scale the numerical features of the train, validate,
     and test datasets.
@@ -447,15 +459,21 @@ def robs(train,validate,test,scale=None):
     if scale is None:
         scale = train.columns.to_list()
     rob_scale = RobustScaler()
-    Xtr,Xv,Xt = train[scale],validate[scale],test[scale]
-    Xtr = pd.DataFrame(rob_scale.fit_transform(train[scale]),train.index,scale)
-    Xv = pd.DataFrame(rob_scale.transform(validate[scale]),validate.index,scale)
-    Xt = pd.DataFrame(rob_scale.transform(test[scale]),test.index,scale)
+    tr = train.copy()
+    tr[scale] = pd.DataFrame(rob_scale.fit_transform(tr[scale]),tr.index,tr[scale].columns)
     for col in scale:
-        Xtr = Xtr.rename(columns={col: f'{col}_s'})
-        Xv = Xv.rename(columns={col: f'{col}_s'})
-        Xt = Xt.rename(columns={col: f'{col}_s'})
-    return Xtr, Xv, Xt
+        tr = tr.rename(columns={col: f'{col}_s'})
+    if validate is not None:
+        v = validate.copy()
+        v[scale] = pd.DataFrame(rob_scale.transform(v[scale]),v.index,v[scale].columns)
+        for col in scale:
+            v = v.rename(columns={col: f'{col}_s'})
+    if test is not None:
+        t = test.copy()
+        t[scale] = pd.DataFrame(rob_scale.transform(t[scale]),t.index,t[scale].columns)
+        for col in scale:
+            t = t.rename(columns={col: f'{col}_s'})
+    return tr, v, t
 
 ### ENCODE ###
 
